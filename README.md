@@ -1,2 +1,5 @@
 # PasswordManager
-This project made in c++ using the sqlite3.c librairy can be used to store your passwords effectively. I have secured it with a system of a database that store a password that you've decided and if the password the user enter is the same you can access to the database where you store your passwords 
+| STILL IN PROGRESS|
+|------------------|
+
+This project made in c++ using the sqlite3.c librairy can be used to store your passwords effectively. I have secured it with a system of a database that store a password that you've decided and if the password the user enter is the same you can access to the database where you store your passwords. I still need to make more clear for the user and to really clean the code. But for a first time working with databases in c++ I'm quite proud of it. I also need to add a lot of securities to it so that any user can use it without any prior experience of SQL at all.
