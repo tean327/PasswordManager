@@ -27,11 +27,17 @@ int main(int argc, char *argv[])
 {
     char *filename = (char *)"mdp.db";
     openMDPDB(filename, MDPdb);
-    char *pFilename = (char *)malloc(sizeof(char) * 10);
+    // this is the user given filename
+    char *userFilename = (char *)malloc(sizeof(char) * 10);
+    // this is the filename that we will add .db after it
+    char *pFilename = (char *)malloc(sizeof(char) * (strlen(userFilename) + 3));
+
     if (argc < 2)
     {
         std::cout << "Enter the filename of the database where your user mdp is or will be stored:";
-        std::cin >> pFilename;
+        std::cin >> userFilename;
+        strcpy(pFilename, userFilename);
+        strcat(pFilename, (char *)".db");
     }
     else
         pFilename = argv[1];
@@ -48,6 +54,8 @@ int main(int argc, char *argv[])
     else
         CreateCheckDB(pFilename, CheckDB);
     HandleUserInputs();
+    free(userFilename);
+    free(pFilename);
     return 0;
 }
 
@@ -165,20 +173,22 @@ void CreationMode()
             char *appSite = (char *)malloc(sizeof(char) * 25);
             char *username = (char *)malloc(sizeof(char) * 25);
             char *mdp = (char *)malloc(sizeof(char) * 25);
+            std::cout << "------------------------------------------------------------------------\n";
             std::cout << "Enter the place where this password is used: ";
             std::cin >> appSite;
             std::cout << "Enter the username: ";
             std::cin >> username;
             std::cout << "Enter the password: ";
             std::cin >> mdp;
+            std::cout << "------------------------------------------------------------------------\n";
             sqlite3_bind_text(stmt, 1, appSite, -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(stmt, 2, username, -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(stmt, 3, mdp, -1, SQLITE_TRANSIENT);
             sqlite3_step(stmt);
             sqlite3_finalize(stmt);
-            std::cout << "---------------------------------------------------------\n";
-            std::cout << "You've just added your password: " << mdp << " at the username: " << username << " for: " << appSite << "\n";
-            std::cout << "---------------------------------------------------------\n";
+            std::cout << "----------------------------------------------------------------------------------------------------------------\n|";
+            std::cout << "You've just added your password: " << mdp << " at the username: " << username << " for: " << appSite << "|\n";
+            std::cout << "-----------------------------------------------------------------------------------------------------------------\n";
         }
         std::cout << "Do you want to quit the creation mode ? \n  If not enter anything else than 'y', 'Y' or 'yes': ";
         std::cin >> continueToCreate;
@@ -213,19 +223,20 @@ void AccesMode()
                     newNode = newNode->next;
                 }
                 newNode->textValue = (char *)sqlite3_column_text(stmt, 0);
-                std::cout << newNode->textValue << "\n";
+                std::cout << "------------------------------------------\n";
+                std::cout << "|" << newNode->textValue << "|\n";
             }
+            std::cout << "------------------------------------------\n";
         }
 
-        std::cout << "----------------------------------\n";
         const char *specificAppQuery = "SELECT * FROM MDP WHERE AppSite = ?";
         stmt = NULL;
         if (sqlite3_prepare_v2(MDPdb, specificAppQuery, -1, &stmt, 0) == SQLITE_OK)
         {
             std::cout << "here\n";
             char *userApp = (char *)malloc(sizeof(char) * 10);
-            bool hasEntered = false;
-            while (!IsInsideList(userApp, appSiteList) || !hasEntered)
+            // bool hasEntered = false;
+            // while (!IsInsideList(userApp, appSiteList) || !hasEntered)
             {
                 // hasEntered = true;
                 std::cout << "From which app you want to see your password and username ?:";
@@ -237,7 +248,7 @@ void AccesMode()
                 std::cout << "---------------------------------\n";
                 for (int i = 0; i < sqlite3_column_count(stmt); i++)
                 {
-                    std::cout << (char *)sqlite3_column_name(stmt, i) << ": " << (char *)sqlite3_column_text(stmt, i) << "\n";
+                    std::cout << "|" << (char *)sqlite3_column_name(stmt, i) << ": " << (char *)sqlite3_column_text(stmt, i) << "|\n";
                 }
             }
             sqlite3_finalize(stmt);
@@ -316,12 +327,9 @@ bool IsInsideList(char *value, list *headNode)
     {
         if (strcmp(searchNode->textValue, value) == 0)
         {
-            std::cout << "here\n";
             return true;
         }
-        std::cout << "before" << searchNode->textValue;
         searchNode = searchNode->next;
-        std::cout << "after" << searchNode->textValue;
     }
     std::cout << "outside?\n";
     return false;
