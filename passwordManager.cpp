@@ -13,6 +13,7 @@ typedef struct nodelist
     nodelist *next;
 } list;
 
+#pragma region Funcs
 void openMDPDB(char *filename, sqlite3 *database);
 void createMDPTable(sqlite3 *database);
 bool CheckIdentity(char *filename, sqlite3 *database);
@@ -22,6 +23,9 @@ void HandleUserInputs();
 void CreationMode();
 void AccesMode();
 bool IsInsideList(char *value, list *headNode);
+void AddAtEndOfList(char *value, list *headNode);
+void FreeListMemory(list *head);
+#pragma endregion
 
 int main(int argc, char *argv[])
 {
@@ -41,7 +45,7 @@ int main(int argc, char *argv[])
     }
     else
         pFilename = argv[1];
-    if (!newUser)
+    if (!databaseExists(pFilename))
     {
         if (CheckIdentity(pFilename, CheckDB))
             createMDPTable(MDPdb);
@@ -93,6 +97,8 @@ bool CheckIdentity(char *filename, sqlite3 *database)
         returnValue = strcmp(userValue, value) == 0;
         sqlite3_finalize(stmt);
     }
+    else
+        returnValue = false;
     free(errorMsg);
     free(value);
     free(userValue);
@@ -207,10 +213,7 @@ void AccesMode()
     while (strcmp(continueToAcces, "yes") != 0 && strcmp(continueToAcces, "y") != 0 && strcmp(continueToAcces, "Y"))
     {
         list *appSiteList = (list *)malloc(sizeof(list));
-        list *newNode = appSiteList;
-
         appSiteList->next = NULL;
-        appSiteList->textValue = NULL;
         std::cout << "Here's a list of all the places where you have stored a password:\n";
         const char *appQuery = "SELECT AppSite FROM MDP";
         sqlite3_stmt *stmt = NULL;
@@ -218,13 +221,9 @@ void AccesMode()
         {
             while (sqlite3_step(stmt) == SQLITE_ROW)
             {
-                while (newNode->next != NULL)
-                {
-                    newNode = newNode->next;
-                }
-                newNode->textValue = (char *)sqlite3_column_text(stmt, 0);
+                AddAtEndOfList((char *)sqlite3_column_text(stmt, 0), appSiteList);
                 std::cout << "------------------------------------------\n";
-                std::cout << "|" << newNode->textValue << "|\n";
+                std::cout << "|" << (char *)sqlite3_column_text(stmt, 0) << "|\n";
             }
             std::cout << "------------------------------------------\n";
         }
@@ -233,12 +232,11 @@ void AccesMode()
         stmt = NULL;
         if (sqlite3_prepare_v2(MDPdb, specificAppQuery, -1, &stmt, 0) == SQLITE_OK)
         {
-            std::cout << "here\n";
             char *userApp = (char *)malloc(sizeof(char) * 10);
-            // bool hasEntered = false;
-            // while (!IsInsideList(userApp, appSiteList) || !hasEntered)
+            bool hasEntered = false;
+            while (!IsInsideList(userApp, appSiteList) || !hasEntered)
             {
-                // hasEntered = true;
+                hasEntered = true;
                 std::cout << "From which app you want to see your password and username ?:";
                 std::cin >> userApp;
             }
@@ -257,6 +255,7 @@ void AccesMode()
         std::cout << "---------------------------------\n";
         std::cout << "Do you want to quit the acces mode ? \n  If not enter anything else than 'y', 'Y' or 'yes': ";
         std::cin >> continueToAcces;
+        FreeListMemory(appSiteList);
     }
     // Check if the user want to create new password
     char *enterCreationMode = (char *)malloc(sizeof(char) * 2);
@@ -304,8 +303,7 @@ void CreateCheckDB(char *filename, sqlite3 *database)
         char *userMDP = (char *)malloc(sizeof(char) * 10);
         std::cout << " Create your password here: ";
         std::cin >> userMDP;
-        std::cout << "\n"
-                  << userMDP << "\n";
+        std::cout << userMDP << "\n";
         sqlite3_bind_text(stmt, 1, userMDP, -1, SQLITE_TRANSIENT);
         sqlite3_step(stmt);
         sqlite3_finalize(stmt);
@@ -319,11 +317,12 @@ bool databaseExists(char *filename)
     return file.good();
 }
 
+// This function seems to be good the problem are the value stored inside the list that are all username
+// See AddAtEndOfList
 bool IsInsideList(char *value, list *headNode)
 {
     list *searchNode = headNode;
-    std::cout << searchNode->next->textValue << "\n";
-    while (strcmp(searchNode->textValue, value) != 0)
+    while (searchNode != NULL)
     {
         if (strcmp(searchNode->textValue, value) == 0)
         {
@@ -331,6 +330,44 @@ bool IsInsideList(char *value, list *headNode)
         }
         searchNode = searchNode->next;
     }
-    std::cout << "outside?\n";
     return false;
+}
+
+void AddAtEndOfList(char *value, list *head)
+{
+    list *newNode = (list *)malloc(sizeof(list));
+    if (newNode == NULL)
+    {
+        std::cout << "Unable to allocate memory for new node\n";
+        // Exit will end the program with the code 1
+        exit(1);
+    }
+    newNode->textValue = strdup(value);
+    newNode->next = NULL;
+
+    if (head->next == NULL)
+    {
+        head->next = newNode;
+    }
+    else
+    {
+        list *current = head;
+        while (current->next != NULL)
+        {
+            current = current->next;
+        }
+        current->next = newNode;
+        return;
+    }
+}
+
+void FreeListMemory(list *head)
+{
+    list *tmp;
+    while (head != NULL)
+    {
+        tmp = head;
+        head = head->next;
+        free(tmp);
+    }
 }
