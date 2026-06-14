@@ -7,6 +7,7 @@
 sqlite3 *MDPdb;
 sqlite3 *CheckDB;
 bool newUser = true;
+int key;
 typedef struct nodelist
 {
     char *textValue;
@@ -25,6 +26,10 @@ void AccesMode();
 bool IsInsideList(char *value, list *headNode);
 void AddAtEndOfList(char *value, list *headNode);
 void FreeListMemory(list *head);
+void HashPasswords(char *pPassword, int pKey);
+void UnhashPasswords(char *pPassword, int pKey);
+int GenerateHashKey();
+int GetHashKey();
 #pragma endregion
 
 int main(int argc, char *argv[])
@@ -45,7 +50,8 @@ int main(int argc, char *argv[])
     }
     else
         pFilename = argv[1];
-    if (!databaseExists(pFilename))
+
+    if (!newUser)
     {
         if (CheckIdentity(pFilename, CheckDB))
             createMDPTable(MDPdb);
@@ -57,7 +63,15 @@ int main(int argc, char *argv[])
     }
     else
         CreateCheckDB(pFilename, CheckDB);
+    key = GetHashKey();
+    if (key == 0)
+    {
+        std::cout << "Couldn't get the hash key\n";
+        return 1;
+    }
     HandleUserInputs();
+    sqlite3_close(CheckDB);
+    sqlite3_close(MDPdb);
     free(userFilename);
     free(pFilename);
     return 0;
@@ -109,6 +123,7 @@ bool CheckIdentity(char *filename, sqlite3 *database)
 void openMDPDB(char *filename, sqlite3 *database)
 {
     newUser = !databaseExists(filename);
+    std::cout << newUser << "\n";
     int opened = sqlite3_open(filename, &database);
     if (opened)
     { // check if opening the database is successful
@@ -187,14 +202,21 @@ void CreationMode()
             std::cout << "Enter the password: ";
             std::cin >> mdp;
             std::cout << "------------------------------------------------------------------------\n";
+
+            char *hashedMDP = strdup(mdp);
+            HashPasswords(hashedMDP, key);
+
             sqlite3_bind_text(stmt, 1, appSite, -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(stmt, 2, username, -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt, 3, mdp, -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt, 3, hashedMDP, -1, SQLITE_TRANSIENT);
             sqlite3_step(stmt);
             sqlite3_finalize(stmt);
             std::cout << "----------------------------------------------------------------------------------------------------------------\n|";
             std::cout << "You've just added your password: " << mdp << " at the username: " << username << " for: " << appSite << "|\n";
             std::cout << "-----------------------------------------------------------------------------------------------------------------\n";
+            free(appSite);
+            free(username);
+            free(mdp);
         }
         std::cout << "Do you want to quit the creation mode ? \n  If not enter anything else than 'y', 'Y' or 'yes': ";
         std::cin >> continueToCreate;
@@ -233,10 +255,8 @@ void AccesMode()
         if (sqlite3_prepare_v2(MDPdb, specificAppQuery, -1, &stmt, 0) == SQLITE_OK)
         {
             char *userApp = (char *)malloc(sizeof(char) * 10);
-            bool hasEntered = false;
-            while (!IsInsideList(userApp, appSiteList) || !hasEntered)
+            while (!IsInsideList(userApp, appSiteList))
             {
-                hasEntered = true;
                 std::cout << "From which app you want to see your password and username ?:";
                 std::cin >> userApp;
             }
@@ -246,6 +266,13 @@ void AccesMode()
                 std::cout << "---------------------------------\n";
                 for (int i = 0; i < sqlite3_column_count(stmt); i++)
                 {
+                    if (i == 2)
+                    {
+                        char *mdp = (char *)sqlite3_column_text(stmt, i);
+                        UnhashPasswords(mdp, key);
+                        std::cout << "|" << (char *)sqlite3_column_name(stmt, i) << ": " << mdp << "|\n";
+                        continue;
+                    }
                     std::cout << "|" << (char *)sqlite3_column_name(stmt, i) << ": " << (char *)sqlite3_column_text(stmt, i) << "|\n";
                 }
             }
@@ -267,6 +294,7 @@ void AccesMode()
     free(enterCreationMode);
     free(continueToAcces);
 }
+
 void CreateCheckDB(char *filename, sqlite3 *database)
 {
     bool opened = sqlite3_open(filename, &database);
@@ -282,7 +310,8 @@ void CreateCheckDB(char *filename, sqlite3 *database)
 
     char *errorMsg;
     const char *sqlCreate = "CREATE TABLE IF NOT EXISTS USER("
-                            "mdp TEXT NOT NULL)";
+                            "mdp TEXT NOT NULL,"
+                            "key INTEGER)";
 
     int rc = sqlite3_exec(database, sqlCreate, NULL, 0, &errorMsg);
     if (rc != SQLITE_OK)
@@ -296,15 +325,18 @@ void CreateCheckDB(char *filename, sqlite3 *database)
         std::cout << "table USER made successfully \n";
     }
 
-    const char *mdpQuery = "INSERT INTO USER(mdp) VALUES(?)";
+    const char *mdpQuery = "INSERT INTO USER(mdp, key) VALUES(?, ?)";
     sqlite3_stmt *stmt = NULL;
     if (sqlite3_prepare_v2(CheckDB, mdpQuery, -1, &stmt, 0) == SQLITE_OK)
     {
         char *userMDP = (char *)malloc(sizeof(char) * 10);
         std::cout << " Create your password here: ";
         std::cin >> userMDP;
-        std::cout << userMDP << "\n";
+        std::cout << "You've entered: " << userMDP << "\n";
         sqlite3_bind_text(stmt, 1, userMDP, -1, SQLITE_TRANSIENT);
+        char key[20];
+        sprintf(key, "%d", GenerateHashKey());
+        sqlite3_bind_text(stmt, 2, key, -1, SQLITE_TRANSIENT);
         sqlite3_step(stmt);
         sqlite3_finalize(stmt);
     }
@@ -317,11 +349,14 @@ bool databaseExists(char *filename)
     return file.good();
 }
 
-// This function seems to be good the problem are the value stored inside the list that are all username
-// See AddAtEndOfList
 bool IsInsideList(char *value, list *headNode)
 {
     list *searchNode = headNode;
+    if (headNode->textValue == NULL && headNode->next == NULL)
+    {
+        std::cout << "You don't have any passwords stored\n";
+        return true;
+    }
     while (searchNode != NULL)
     {
         if (strcmp(searchNode->textValue, value) == 0)
@@ -370,4 +405,50 @@ void FreeListMemory(list *head)
         head = head->next;
         free(tmp);
     }
+}
+
+void HashPasswords(char *pPassword, int pKey)
+{
+    int count = strlen(pPassword);
+    for (int i = 0; i < count; i++)
+    {
+        pPassword[i] += pKey;
+    }
+}
+
+void UnhashPasswords(char *pPassword, int pKey)
+{
+    int count = strlen(pPassword);
+    for (int i = 0; i < count; i++)
+    {
+        pPassword[i] -= pKey;
+    }
+}
+
+int GenerateHashKey()
+{
+    int a = rand();
+    int b = a * (rand() % a);
+    printf("%d\n", b);
+    return a * (rand() % a);
+}
+
+int GetHashKey()
+{
+    int key = 0;
+    const char *query = "SELECT mdp FROM USER";
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(CheckDB, query, -1, &stmt, 0) == SQLITE_OK)
+    {
+        if (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            // Extract the first column of the first row
+            char *value = (char *)sqlite3_column_text(stmt, 0);
+            for (int i = 0; i < strlen(value); i++)
+            {
+                key += value[i] - '0';
+            }
+        }
+    }
+    return key;
 }
